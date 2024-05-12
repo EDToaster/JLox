@@ -1,4 +1,7 @@
-class Interpreter: Expr.Visitor<Any?> {
+class Interpreter: Expr.Visitor<Any?>, Stmt.Visitor<Unit> {
+
+    private var env: Environment = Environment()
+
     override fun visit(binary: Expr.Binary): Any? {
         // implement shortcircuiting for `and` and `or`
         when (binary.operator.type) {
@@ -45,6 +48,8 @@ class Interpreter: Expr.Visitor<Any?> {
 
     override fun visit(literal: Expr.Literal): Any? = literal.value
 
+    override fun visit(variable: Expr.Variable): Any? = env[variable.name.lexeme]
+
     override fun visit(unary: Expr.Unary): Any? {
         val right = unary.right.accept(this)
 
@@ -60,6 +65,12 @@ class Interpreter: Expr.Visitor<Any?> {
         return if (truthy(cond)) ternary.t.accept(this) else ternary.e.accept(this)
     }
 
+    override fun visit(assign: Expr.Assign): Any? {
+        val value = assign.value.accept(this)
+        env.assign(assign.name.lexeme, value)
+        return value
+    }
+
     private fun truthy(v: Any?): Boolean = v != null && v != false
 
     private fun assertDouble(token: Token, a: Any?, ifTrue: (Double) -> Any?):Any? =
@@ -69,8 +80,69 @@ class Interpreter: Expr.Visitor<Any?> {
         if (a is Double && b is Double) ifTrue(a, b) else throw InterpreterError(token, "Expected operands to be numbers")
 
 
-    fun interpret(expr: Expr): Any? = expr.accept(this)
+    override fun visit(expression: Stmt.Expression) {
+        expression.expression.accept(this)
+    }
 
+    override fun visit(printExpr: Stmt.PrintExpr) {
+        val value = printExpr.expression.accept(this)
+        println(value.toJLoxString())
+    }
+
+    override fun visit(decl: Stmt.Decl) {
+        val name = decl.name.lexeme
+        env.declare(name, decl.init?.accept(this))
+    }
+
+    override fun visit(block: Stmt.Block) {
+        val prevEnv = env
+        try {
+            env = Environment(env)
+            for (stmt in block.body) {
+                stmt.accept(this)
+            }
+        } finally {
+            env = prevEnv
+        }
+    }
+
+    override fun visit(ifStmt: Stmt.IfStmt) {
+        if (truthy(ifStmt.cond.accept(this))) {
+            ifStmt.t.accept(this)
+        } else {
+            ifStmt.e?.accept(this)
+        }
+    }
+
+    override fun visit(whileStmt: Stmt.WhileStmt) {
+        while(truthy(whileStmt.cond.accept(this))) {
+            try {
+                whileStmt.body?.accept(this)
+            } catch (e: BreakException) {
+                break
+            }
+        }
+    }
+
+    override fun visit(breakStmt: Stmt.Break) = throw BreakException()
+
+    fun interpret(stmt: Stmt) = stmt.accept(this)
 }
 
 class InterpreterError(val token: Token, message: String) : RuntimeException(message)
+
+fun Any?.toJLoxString(): String {
+    if (this == null) {
+        return "nil"
+    }
+
+    if (this is Double) {
+        val flr = this.toInt()
+        if (flr.toDouble() == this) {
+            return flr.toString()
+        }
+        return this.toString()
+    }
+
+    return this.toString()
+}

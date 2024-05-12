@@ -14,6 +14,9 @@ enum class TokenType {
     // KEYWORDS
     AND, CLASS, ELSE, FALSE, FUN, FOR, IF, NIL, OR, PRINT, RETURN, SUPER, THIS, TRUE, VAR, WHILE,
 
+    // CONTROL FLOW KEYWORDS
+    BREAK,
+
     EOF;
 
     companion object {
@@ -35,6 +38,7 @@ enum class TokenType {
                 "super" -> SUPER
                 "this" -> THIS
                 "var" -> VAR
+                "break" -> BREAK
                 else -> null
             }
         }

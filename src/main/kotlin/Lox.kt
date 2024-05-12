@@ -8,6 +8,7 @@ import kotlin.system.exitProcess
 class Lox {
 
     val interpreter = Interpreter()
+    val astPrinter = ASTPrinter()
 
     var runtimeErrored = false
     var errored = false
@@ -17,10 +18,10 @@ class Lox {
         val lexer = Lexer(prog, ::reportError)
         lexer.scanTokens()
         val parser = Parser(lexer.tokens, ::report)
-        val expr = parser.parse() ?: return
+        val exprs = parser.parse() ?: return
 
         try {
-            println(interpreter.interpret(expr))
+            exprs.forEach { interpreter.interpret(it) }
         } catch (e: InterpreterError) {
             reportInterpreterError(e)
             runtimeErrored = true
