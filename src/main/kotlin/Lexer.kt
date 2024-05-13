@@ -12,7 +12,7 @@ enum class TokenType {
     IDENT, STRING, NUM,
 
     // KEYWORDS
-    AND, CLASS, ELSE, FALSE, FUN, FOR, IF, NIL, OR, PRINT, RETURN, SUPER, THIS, TRUE, VAR, WHILE,
+    AND, CLASS, ELSE, FALSE, FUN, FOR, IF, NIL, OR, RETURN, SUPER, THIS, TRUE, VAR, WHILE,
 
     // CONTROL FLOW KEYWORDS
     BREAK,
@@ -33,7 +33,6 @@ enum class TokenType {
                 "true" -> TRUE
                 "false" -> FALSE
                 "nil" -> NIL
-                "print" -> PRINT
                 "return" -> RETURN
                 "super" -> SUPER
                 "this" -> THIS

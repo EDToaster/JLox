@@ -7,7 +7,28 @@ import kotlin.system.exitProcess
 
 class Lox {
 
-    val interpreter = Interpreter()
+    val environment = Environment()
+
+    init {
+        environment.run {
+            declare("print", object: LoxCallable {
+                override fun call(args: List<Any?>): Any? {
+                    println(args.joinToString(" ", transform = Any?::toJLoxString))
+                    return null
+                }
+                override fun arity(): Int? = null
+                override fun toString(): String = "<native fun print:#${arity()}>"
+            })
+
+            declare("time", object: LoxCallable {
+                override fun call(args: List<Any?>): Any = System.currentTimeMillis().toDouble()
+                override fun arity(): Int = 0
+                override fun toString(): String = "<native fun time:#${arity()}>"
+            })
+        }
+    }
+
+    val interpreter = Interpreter(environment)
     val astPrinter = ASTPrinter()
 
     var runtimeErrored = false

@@ -1,6 +1,4 @@
-class Interpreter: Expr.Visitor<Any?>, Stmt.Visitor<Unit> {
-
-    private var env: Environment = Environment()
+class Interpreter(private var env: Environment): Expr.Visitor<Any?>, Stmt.Visitor<Unit> {
 
     override fun visit(binary: Expr.Binary): Any? {
         // implement shortcircuiting for `and` and `or`
@@ -24,7 +22,7 @@ class Interpreter: Expr.Visitor<Any?>, Stmt.Visitor<Unit> {
             TokenType.PLUS -> if (left is Double && right is Double) {
                 left + right
             } else if (left is String) {
-                left + right
+                left + right.toJLoxString()
             } else {
                 throw InterpreterError(binary.operator,"Expected operands to be numbers or first operand to be a string")
             }
@@ -71,6 +69,41 @@ class Interpreter: Expr.Visitor<Any?>, Stmt.Visitor<Unit> {
         return value
     }
 
+    override fun visit(call: Expr.Call): Any? {
+        val callee = call.callee.accept(this)
+        if (callee !is LoxCallable) {
+            throw InterpreterError(call.lparen, "Callee is not a function or a class")
+        }
+
+        // evaluate args
+        val arity = callee.arity()
+        if (arity != null && arity != call.arguments.size) {
+            throw InterpreterError(call.lparen, "Expecting $arity arguments, got ${call.arguments.size}")
+        }
+
+        return callee.call(call.arguments.map { it.accept(this) })
+    }
+
+    override fun visit(funDef: Expr.FunDef): Any {
+        val closure = env
+        return object: LoxCallable {
+            override fun call(args: List<Any?>): Any? = newScope(Environment(closure)) {
+                // Bind parameters
+                funDef.params.map { it.lexeme }.zip(args).forEach { (param, arg) -> env.declare(param, arg) }
+                return@newScope try {
+                    funDef.body.accept(this@Interpreter)
+                    null
+                } catch (e: ReturnException) {
+                    e.value
+                }
+            }
+
+            override fun arity(): Int = funDef.params.size
+
+            override fun toString(): String = "<fun anonymous#${arity()}>"
+        }
+    }
+
     private fun truthy(v: Any?): Boolean = v != null && v != false
 
     private fun assertDouble(token: Token, a: Any?, ifTrue: (Double) -> Any?):Any? =
@@ -84,23 +117,24 @@ class Interpreter: Expr.Visitor<Any?>, Stmt.Visitor<Unit> {
         expression.expression.accept(this)
     }
 
-    override fun visit(printExpr: Stmt.PrintExpr) {
-        val value = printExpr.expression.accept(this)
-        println(value.toJLoxString())
-    }
-
     override fun visit(decl: Stmt.Decl) {
         val name = decl.name.lexeme
         env.declare(name, decl.init?.accept(this))
     }
 
     override fun visit(block: Stmt.Block) {
-        val prevEnv = env
-        try {
-            env = Environment(env)
+        newScope(Environment(env)) {
             for (stmt in block.body) {
                 stmt.accept(this)
             }
+        }
+    }
+
+    private fun newScope(newEnv: Environment, doThing: () -> Any?): Any? {
+        val prevEnv = env
+        try {
+            env = newEnv
+            return doThing()
         } finally {
             env = prevEnv
         }
@@ -125,6 +159,8 @@ class Interpreter: Expr.Visitor<Any?>, Stmt.Visitor<Unit> {
     }
 
     override fun visit(breakStmt: Stmt.Break) = throw BreakException()
+
+    override fun visit(retStmt: Stmt.Return) = throw ReturnException(retStmt.value?.accept(this))
 
     fun interpret(stmt: Stmt) = stmt.accept(this)
 }
