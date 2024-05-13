@@ -12,11 +12,12 @@ var end = time();
 print("" + (end - start) + " milliseconds elapsed");
 
 fun makeCounter() {
-    var count = 0;
     fun counter() {
         count = count + 1;
         return count;
     }
+    // this is not supposed to work!
+    var count = 0;
     return counter;
 }
 
@@ -31,3 +32,10 @@ fun thrice(fn) {
 }
 
 thrice(fun(i) print("Thrice: " + i););
+
+// Test name binding for functions
+var anon = fun() {};
+fun named() {}
+
+print(anon);
+print(named);

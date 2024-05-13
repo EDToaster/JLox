@@ -7,7 +7,7 @@ sealed class Expr {
     class Ternary(val cond: Expr, val t: Expr, val e: Expr): Expr()
     class Assign(val name: Token, val value: Expr): Expr()
     class Call(val callee: Expr, val lparen: Token, val arguments: List<Expr>): Expr()
-    class FunDef(val params: List<Token>, val body: Stmt): Expr()
+    class FunDef(val name: Token?, val params: List<Token>, val body: Stmt): Expr()
 
     fun <R> accept(visitor: Visitor<R>): R = when (this) {
         is Binary -> visitor.visit(this)
@@ -207,7 +207,7 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
 
         if (match(TokenType.FUN)) {
             val ident = consume(TokenType.IDENT, "Expected function name after 'fun'")
-            return Stmt.Decl(ident, finishFunExpr())
+            return Stmt.Decl(ident, finishFunExpr(name = ident))
         }
 
         return statement()
@@ -406,7 +406,7 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
         primary()
     }
 
-    private fun finishFunExpr(): Expr {
+    private fun finishFunExpr(name: Token? = null): Expr {
         consume(TokenType.LPAREN, "Expected '(' after function name'")
 
         val parameters = mutableListOf<Token>()
@@ -419,7 +419,7 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
         consume(TokenType.RPAREN, "Expected ')' after function parameter list")
 
         val body = statement()
-        return Expr.FunDef(parameters, body)
+        return Expr.FunDef(name, parameters, body)
     }
 
     private fun primary(): Expr {

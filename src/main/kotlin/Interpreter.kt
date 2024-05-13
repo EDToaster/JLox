@@ -100,7 +100,7 @@ class Interpreter(private var env: Environment): Expr.Visitor<Any?>, Stmt.Visito
 
             override fun arity(): Int = funDef.params.size
 
-            override fun toString(): String = "<fun anonymous#${arity()}>"
+            override fun toString(): String = "<fun ${funDef.name?.lexeme ?: "anonymous"}#${arity()}>"
         }
     }
 
