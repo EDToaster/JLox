@@ -84,11 +84,16 @@ class ASTPrinter: Expr.Visitor<String>, Stmt.Visitor<String> {
     override fun visit(retStmt: Stmt.Return): String {
         TODO("Not yet implemented")
     }
+
+    override fun visit(funDecl: Stmt.FunDecl): String {
+        TODO("Not yet implemented")
+    }
 }
 
 sealed class Stmt {
     class Expression(val expression: Expr): Stmt()
     class Decl(val name: Token, val init: Expr?): Stmt()
+    class FunDecl(val name: Token, val body: Expr.FunDef): Stmt()
     class Block(val body: List<Stmt>): Stmt()
     class IfStmt(val cond: Expr, val t: Stmt, val e: Stmt?): Stmt()
     class WhileStmt(val cond: Expr, val body: Stmt?): Stmt()
@@ -103,6 +108,7 @@ sealed class Stmt {
         is WhileStmt -> visitor.visit(this)
         is Break -> visitor.visit(this)
         is Return -> visitor.visit(this)
+        is FunDecl -> visitor.visit(this)
     }
 
     interface Visitor<R> {
@@ -113,6 +119,7 @@ sealed class Stmt {
         fun visit(whileStmt: WhileStmt): R
         fun visit(breakStmt: Break): R
         fun visit(retStmt: Return): R
+        fun visit(funDecl: FunDecl): R
     }
 }
 
@@ -207,7 +214,7 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
 
         if (match(TokenType.FUN)) {
             val ident = consume(TokenType.IDENT, "Expected function name after 'fun'")
-            return Stmt.Decl(ident, finishFunExpr(name = ident))
+            return Stmt.FunDecl(ident, finishFunExpr(name = ident))
         }
 
         return statement()
@@ -291,8 +298,11 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
     }
 
     private fun returnStmt(): Stmt {
-        val value = if (match(TokenType.SEMI)) null else expression()
-        consume(TokenType.SEMI, "Expect ';' after 'return'")
+        val value = if (match(TokenType.SEMI)) null else {
+            val expr = expression()
+            consume(TokenType.SEMI, "Expect ';' after 'return'")
+            expr
+        }
         return Stmt.Return(value)
     }
 
@@ -406,7 +416,7 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
         primary()
     }
 
-    private fun finishFunExpr(name: Token? = null): Expr {
+    private fun finishFunExpr(name: Token? = null): Expr.FunDef {
         consume(TokenType.LPAREN, "Expected '(' after function name'")
 
         val parameters = mutableListOf<Token>()

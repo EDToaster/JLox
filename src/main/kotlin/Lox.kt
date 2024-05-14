@@ -25,10 +25,22 @@ class Lox {
                 override fun arity(): Int = 0
                 override fun toString(): String = "<native fun time:#${arity()}>"
             })
+
+            declare("assert", object: LoxCallable {
+                override fun call(args: List<Any?>): Any? {
+                    if (!truthy(args[0])) {
+                        throw AssertionException()
+                    }
+                    return null
+                }
+
+                override fun arity(): Int = 1
+            })
         }
     }
 
     val interpreter = Interpreter(environment)
+    val resolver = Resolver(interpreter.locals::put, environment.boundNames())
     val astPrinter = ASTPrinter()
 
     var runtimeErrored = false
@@ -39,10 +51,15 @@ class Lox {
         val lexer = Lexer(prog, ::reportError)
         lexer.scanTokens()
         val parser = Parser(lexer.tokens, ::report)
-        val exprs = parser.parse() ?: return
+        val stmts = parser.parse() ?: return
 
         try {
-            exprs.forEach { interpreter.interpret(it) }
+            stmts.forEach {
+                // TODO: CHALLENGERS chapter 11.
+                resolver.resolve(it)
+                if (errored) return@forEach
+                interpreter.interpret(it)
+            }
         } catch (e: InterpreterError) {
             reportInterpreterError(e)
             runtimeErrored = true

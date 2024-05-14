@@ -1,5 +1,7 @@
 class Interpreter(private var env: Environment): Expr.Visitor<Any?>, Stmt.Visitor<Unit> {
 
+    val locals: MutableMap<Expr, Int> = mutableMapOf()
+
     override fun visit(binary: Expr.Binary): Any? {
         // implement shortcircuiting for `and` and `or`
         when (binary.operator.type) {
@@ -46,7 +48,8 @@ class Interpreter(private var env: Environment): Expr.Visitor<Any?>, Stmt.Visito
 
     override fun visit(literal: Expr.Literal): Any? = literal.value
 
-    override fun visit(variable: Expr.Variable): Any? = env[variable.name.lexeme]
+    override fun visit(variable: Expr.Variable): Any?
+        = env.get(variable.name.lexeme, locals[variable]!!)
 
     override fun visit(unary: Expr.Unary): Any? {
         val right = unary.right.accept(this)
@@ -65,7 +68,7 @@ class Interpreter(private var env: Environment): Expr.Visitor<Any?>, Stmt.Visito
 
     override fun visit(assign: Expr.Assign): Any? {
         val value = assign.value.accept(this)
-        env.assign(assign.name.lexeme, value)
+        env.assign(assign.name.lexeme, value, locals[assign]!!)
         return value
     }
 
@@ -103,8 +106,6 @@ class Interpreter(private var env: Environment): Expr.Visitor<Any?>, Stmt.Visito
             override fun toString(): String = "<fun ${funDef.name?.lexeme ?: "anonymous"}#${arity()}>"
         }
     }
-
-    private fun truthy(v: Any?): Boolean = v != null && v != false
 
     private fun assertDouble(token: Token, a: Any?, ifTrue: (Double) -> Any?):Any? =
         if (a is Double) ifTrue(a) else throw InterpreterError(token, "Expected operand to be numbers")
@@ -161,6 +162,11 @@ class Interpreter(private var env: Environment): Expr.Visitor<Any?>, Stmt.Visito
     override fun visit(breakStmt: Stmt.Break) = throw BreakException()
 
     override fun visit(retStmt: Stmt.Return) = throw ReturnException(retStmt.value?.accept(this))
+
+    override fun visit(funDecl: Stmt.FunDecl) {
+        val name = funDecl.name.lexeme
+        env.declare(name, funDecl.body.accept(this))
+    }
 
     fun interpret(stmt: Stmt) = stmt.accept(this)
 }

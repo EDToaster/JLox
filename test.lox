@@ -12,12 +12,11 @@ var end = time();
 print("" + (end - start) + " milliseconds elapsed");
 
 fun makeCounter() {
+    var count = 0;
     fun counter() {
         count = count + 1;
         return count;
     }
-    // this is not supposed to work!
-    var count = 0;
     return counter;
 }
 
@@ -35,7 +34,18 @@ thrice(fun(i) print("Thrice: " + i););
 
 // Test name binding for functions
 var anon = fun() {};
-fun named() {}
+fun named_func() {}
+var func_alias = named_func;
 
-print(anon);
-print(named);
+assert(anon != named_func);
+assert(named_func == func_alias);
+
+// Test self-referential recursion
+fun count_down(i) {
+    if (i < 0) {return;}
+
+    print(i);
+    count_down(i - 1);
+}
+
+count_down(10);
