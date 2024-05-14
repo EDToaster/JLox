@@ -1,6 +1,33 @@
-class Interpreter(private var env: Environment): Expr.Visitor<Any?>, Stmt.Visitor<Unit> {
+import ast.Expr
+import ast.Stmt
+
+class LoxFunction(val interpreter: Interpreter, val declaration: Expr.FunDef, val closure: Environment): LoxCallable {
+    override fun call(args: List<Any?>): Any? = interpreter.newScope(Environment(closure)) {
+        // Bind parameters
+        declaration.params.map { it.lexeme }.zip(args).forEach { (param, arg) -> interpreter.env.declare(param, arg) }
+        return@newScope try {
+            declaration.body.accept(interpreter)
+            null
+        } catch (e: ReturnException) {
+            e.value
+        }
+    }
+
+    override fun arity(): Int = declaration.params.size
+
+    override fun toString(): String = "<fun ${declaration.name?.lexeme ?: "anonymous"}#${arity()}>"
+
+    override fun bind(obj: LoxObject): LoxFunction {
+        val env = Environment(closure)
+        env.declare("this", obj)
+        return LoxFunction(interpreter, declaration, env)
+    }
+}
+
+class Interpreter(internal var env: Environment): Expr.Visitor<Any?>, Stmt.Visitor<Unit> {
 
     val locals: MutableMap<Expr, Int> = mutableMapOf()
+
 
     override fun visit(binary: Expr.Binary): Any? {
         // implement shortcircuiting for `and` and `or`
@@ -25,8 +52,10 @@ class Interpreter(private var env: Environment): Expr.Visitor<Any?>, Stmt.Visito
                 left + right
             } else if (left is String) {
                 left + right.toJLoxString()
+            } else if (right is String) {
+                left.toJLoxString() + right
             } else {
-                throw InterpreterError(binary.operator,"Expected operands to be numbers or first operand to be a string")
+                throw InterpreterError(binary.operator,"Expected operands to be numbers or first either operand to be a string")
             }
 
             TokenType.SLASH -> assertDoubles(binary.operator, left, right) { a, b -> a / b }
@@ -87,25 +116,28 @@ class Interpreter(private var env: Environment): Expr.Visitor<Any?>, Stmt.Visito
         return callee.call(call.arguments.map { it.accept(this) })
     }
 
-    override fun visit(funDef: Expr.FunDef): Any {
-        val closure = env
-        return object: LoxCallable {
-            override fun call(args: List<Any?>): Any? = newScope(Environment(closure)) {
-                // Bind parameters
-                funDef.params.map { it.lexeme }.zip(args).forEach { (param, arg) -> env.declare(param, arg) }
-                return@newScope try {
-                    funDef.body.accept(this@Interpreter)
-                    null
-                } catch (e: ReturnException) {
-                    e.value
-                }
-            }
+    override fun visit(get: Expr.Get): Any? {
+        val obj = get.obj.accept(this)
+        if (obj !is LoxObject) throw InterpreterError(get.name, "Only object have properties")
 
-            override fun arity(): Int = funDef.params.size
-
-            override fun toString(): String = "<fun ${funDef.name?.lexeme ?: "anonymous"}#${arity()}>"
-        }
+        return obj.getProp(get.name)
     }
+
+    override fun visit(set: Expr.Set): Any? {
+        val obj = set.obj.accept(this)
+        if (obj !is LoxObject) throw InterpreterError(set.name, "Only object have properties")
+
+        val rhs = set.value.accept(this)
+        obj.setProp(set.name, set.value.accept(this))
+        return rhs
+    }
+
+    override fun visit(funDef: Expr.FunDef): LoxFunction {
+        return LoxFunction(this, funDef, env)
+    }
+
+    override fun visit(t: Expr.This): Any?
+            = env.get(t.where.lexeme, locals[t]!!)
 
     private fun assertDouble(token: Token, a: Any?, ifTrue: (Double) -> Any?):Any? =
         if (a is Double) ifTrue(a) else throw InterpreterError(token, "Expected operand to be numbers")
@@ -131,7 +163,7 @@ class Interpreter(private var env: Environment): Expr.Visitor<Any?>, Stmt.Visito
         }
     }
 
-    private fun newScope(newEnv: Environment, doThing: () -> Any?): Any? {
+    internal fun newScope(newEnv: Environment, doThing: () -> Any?): Any? {
         val prevEnv = env
         try {
             env = newEnv
@@ -166,6 +198,13 @@ class Interpreter(private var env: Environment): Expr.Visitor<Any?>, Stmt.Visito
     override fun visit(funDecl: Stmt.FunDecl) {
         val name = funDecl.name.lexeme
         env.declare(name, funDecl.body.accept(this))
+    }
+
+    override fun visit(classDecl: Stmt.ClassDecl) {
+        env.declare(classDecl.name.lexeme, null)
+
+        val methods = classDecl.methods.associate { it.name.lexeme to this.visit(it.body) }
+        env.assign(classDecl.name.lexeme, LoxClass(classDecl.name.lexeme, methods), skips = 0)
     }
 
     fun interpret(stmt: Stmt) = stmt.accept(this)

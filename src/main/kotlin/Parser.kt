@@ -1,38 +1,6 @@
-sealed class Expr {
-    class Binary(val operator: Token, val left: Expr, val right: Expr): Expr()
-    class Grouping(val expr: Expr): Expr()
-    class Literal(val value: Any?): Expr()
-    class Variable(val name: Token): Expr()
-    class Unary(val operator: Token, val right: Expr): Expr()
-    class Ternary(val cond: Expr, val t: Expr, val e: Expr): Expr()
-    class Assign(val name: Token, val value: Expr): Expr()
-    class Call(val callee: Expr, val lparen: Token, val arguments: List<Expr>): Expr()
-    class FunDef(val name: Token?, val params: List<Token>, val body: Stmt): Expr()
+import ast.Expr
+import ast.Stmt
 
-    fun <R> accept(visitor: Visitor<R>): R = when (this) {
-        is Binary -> visitor.visit(this)
-        is Grouping -> visitor.visit(this)
-        is Literal -> visitor.visit(this)
-        is Variable -> visitor.visit(this)
-        is Unary -> visitor.visit(this)
-        is Ternary -> visitor.visit(this)
-        is Assign -> visitor.visit(this)
-        is Call -> visitor.visit(this)
-        is FunDef -> visitor.visit(this)
-    }
-
-    interface Visitor<R> {
-        fun visit(binary: Binary): R
-        fun visit(grouping: Grouping): R
-        fun visit(literal: Literal): R
-        fun visit(variable: Variable): R
-        fun visit(unary: Unary): R
-        fun visit(ternary: Ternary): R
-        fun visit(assign: Assign): R
-        fun visit(call: Call): R
-        fun visit(funDef: FunDef): R
-    }
-}
 
 class ASTPrinter: Expr.Visitor<String>, Stmt.Visitor<String> {
     override fun visit(binary: Expr.Binary): String =
@@ -59,7 +27,19 @@ class ASTPrinter: Expr.Visitor<String>, Stmt.Visitor<String> {
         TODO()
     }
 
+    override fun visit(get: Expr.Get): String {
+        TODO("Not yet implemented")
+    }
+
+    override fun visit(set: Expr.Set): String {
+        TODO("Not yet implemented")
+    }
+
     override fun visit(funDef: Expr.FunDef): String {
+        TODO("Not yet implemented")
+    }
+
+    override fun visit(t: Expr.This): String {
         TODO("Not yet implemented")
     }
 
@@ -68,6 +48,14 @@ class ASTPrinter: Expr.Visitor<String>, Stmt.Visitor<String> {
 
     override fun visit(decl: Stmt.Decl): String =
         "var ${decl.name.lexeme} = ${decl.init?.accept(this) ?: "no init"} ;"
+
+    override fun visit(funDecl: Stmt.FunDecl): String {
+        TODO("Not yet implemented")
+    }
+
+    override fun visit(classDecl: Stmt.ClassDecl): String {
+        TODO("Not yet implemented")
+    }
 
     override fun visit(block: Stmt.Block): String =
         "{ ${block.body.joinToString(" ") { it.accept(this) }} }"
@@ -84,44 +72,8 @@ class ASTPrinter: Expr.Visitor<String>, Stmt.Visitor<String> {
     override fun visit(retStmt: Stmt.Return): String {
         TODO("Not yet implemented")
     }
-
-    override fun visit(funDecl: Stmt.FunDecl): String {
-        TODO("Not yet implemented")
-    }
 }
 
-sealed class Stmt {
-    class Expression(val expression: Expr): Stmt()
-    class Decl(val name: Token, val init: Expr?): Stmt()
-    class FunDecl(val name: Token, val body: Expr.FunDef): Stmt()
-    class Block(val body: List<Stmt>): Stmt()
-    class IfStmt(val cond: Expr, val t: Stmt, val e: Stmt?): Stmt()
-    class WhileStmt(val cond: Expr, val body: Stmt?): Stmt()
-    class Break: Stmt()
-    class Return(val value: Expr?): Stmt()
-
-    fun <R> accept(visitor: Visitor<R>): R = when (this) {
-        is Expression -> visitor.visit(this)
-        is Decl -> visitor.visit(this)
-        is Block -> visitor.visit(this)
-        is IfStmt -> visitor.visit(this)
-        is WhileStmt -> visitor.visit(this)
-        is Break -> visitor.visit(this)
-        is Return -> visitor.visit(this)
-        is FunDecl -> visitor.visit(this)
-    }
-
-    interface Visitor<R> {
-        fun visit(expression: Expression): R
-        fun visit(decl: Decl): R
-        fun visit(block: Block): R
-        fun visit(ifStmt: IfStmt): R
-        fun visit(whileStmt: WhileStmt): R
-        fun visit(breakStmt: Break): R
-        fun visit(retStmt: Return): R
-        fun visit(funDecl: FunDecl): R
-    }
-}
 
 class Parser(private val tokens: List<Token>, val reportError: (Int, String, String) -> Unit) {
     private var current = 0
@@ -158,13 +110,18 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
     /*
      * program        → declaration* EOF ;
      *
-     * declaration    → varDecl
+     * declaration    → classDecl
+     *                | varDecl
      *                | funDef
      *                | statement
      *
+     * classDecl      → "class" IDENT "{" funRest* "}" ;
+     *
      * varDecl        → "var" IDENT ( "=" expression )? ";" ;
      *
-     * funDef         → "fun" IDENT "(" params? ")" statement;
+     * funDef         → "fun" funRest ;
+     * funRest        → IDENT "(" params? ")" statement ;
+     *
      * params         → IDENT ( "," IDENT )* ;
      *
      * statement      → exprStmt
@@ -205,6 +162,19 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
     }
 
     private fun declaration(): Stmt {
+        if (match(TokenType.CLASS)) {
+            val ident = consume(TokenType.IDENT, "Expected variable name after 'class'")
+            consume(TokenType.LBRACE, "Expected '{' after class identifier")
+
+            val methods = mutableListOf<Stmt.FunDecl>()
+            while (!check(TokenType.RBRACE) && !isAtEnd()) {
+                methods.add(finishFunStmt())
+            }
+
+            consume(TokenType.RBRACE, "Expected '}' after class definition")
+            return Stmt.ClassDecl(ident, methods)
+        }
+
         if (match(TokenType.VAR)) {
             val ident = consume(TokenType.IDENT, "Expected variable name after 'var'")
             val init = if (match(TokenType.EQUAL)) expression() else null
@@ -212,12 +182,14 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
             return Stmt.Decl(ident, init)
         }
 
-        if (match(TokenType.FUN)) {
-            val ident = consume(TokenType.IDENT, "Expected function name after 'fun'")
-            return Stmt.FunDecl(ident, finishFunExpr(name = ident))
-        }
+        if (match(TokenType.FUN)) return finishFunStmt()
 
         return statement()
+    }
+
+    private fun finishFunStmt(): Stmt.FunDecl {
+        val ident = consume(TokenType.IDENT, "Expected function name after 'fun'")
+        return Stmt.FunDecl(ident, finishFunExpr(name = ident))
     }
 
     private fun statement(): Stmt {
@@ -294,7 +266,7 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
 
     private fun breakStmt(): Stmt {
         consume(TokenType.SEMI, "Expect ';' after 'break'")
-        return Stmt.Break()
+        return Stmt.Break
     }
 
     private fun returnStmt(): Stmt {
@@ -315,7 +287,7 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
     /*
      * expression     → sequence ;
      * sequence       → assignment ( "," assignment )* ;
-     * assignment     → (IDENT '=' expression)
+     * assignment     → ( call "." )? ( IDENT '=' expression )
      *                | andor ;
      * andor          → ternary ( ( "or" | "and" ) ternary)*
      * ternary        → equality ( "?" expression ":" ternary )? ;
@@ -325,13 +297,14 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
      * factor         → unary ( ( "/" | "*" ) unary )* ;
      * unary          → ( "!" | "-" ) unary
      *                | call ;
-     * call           → funExpr ( "(" arguments? ")" )* ;
+     * call           → funExpr ( "(" arguments? ")" | "." IDENT )* ;
      * arguments      → expression ( "," expression )* ;
      *
      * funExpr        → "fun" "(" params? ")" statement
      *                | primary ;
      *
      * primary        → NUMBER | STRING | "true" | "false" | "nil"
+     *                | THIS
      *                | IDENT
      *                | "(" expression ")" ;
      *                # ERROR PRODUCTION RULES
@@ -354,6 +327,8 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
 
             if (expr is Expr.Variable) {
                 return Expr.Assign(expr.name, value)
+            } else if (expr is Expr.Get) {
+                return Expr.Set(expr.obj, expr.name, value)
             }
 
             reportError(equals, "Invalid l-value")
@@ -401,8 +376,10 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
                         args.add(assignment());
                     } while (match(TokenType.COMMA));
                 }
-                consume(TokenType.RPAREN, "Expect ')' after arguments.");
+                consume(TokenType.RPAREN, "Expected ')' after arguments");
                 expr = Expr.Call(expr, lparen, args)
+            } else if(match(TokenType.DOT)) {
+                expr = Expr.Get(expr, consume(TokenType.IDENT, "Expected property name after '.'"))
             } else {
                 break
             }
@@ -439,6 +416,7 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
 
         if (match(TokenType.NUM, TokenType.STRING)) return Expr.Literal(previous().literal)
 
+        if (match(TokenType.THIS)) return Expr.This(previous())
         if (match(TokenType.IDENT)) return Expr.Variable(previous())
 
         if (match(TokenType.LPAREN)) {

@@ -49,3 +49,36 @@ fun count_down(i) {
 }
 
 count_down(10);
+
+// Test classes
+class TestClass {
+    greet(name) return "Hello, " + name + "!";
+}
+
+print(TestClass);
+print(TestClass());
+
+var outerObj = TestClass();
+var innerObj = TestClass();
+outerObj.inner = innerObj;
+outerObj.x = "hello,";
+outerObj.inner.x = " world!";
+print(outerObj.x + outerObj.inner.x);
+assert(outerObj.inner == innerObj);
+
+// It should know which instance the sayName method was hoisted from
+class Person {
+  init(name) {
+    this.name = name;
+  }
+
+  sayName() {
+    print(this.name);
+  }
+}
+
+var jane = Person("Jane");
+var bill = Person("Bill");
+
+bill.sayName = jane.sayName;
+bill.sayName(); // should say "Jane"

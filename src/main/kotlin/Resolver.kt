@@ -1,3 +1,6 @@
+import ast.Expr
+import ast.Stmt
+
 class Resolver(val resolverFunc: (Expr, Int) -> Unit, val globals: Set<String>): Expr.Visitor<Unit>, Stmt.Visitor<Unit> {
 
     private val scopes = ArrayDeque<MutableSet<String>>()
@@ -42,10 +45,21 @@ class Resolver(val resolverFunc: (Expr, Int) -> Unit, val globals: Set<String>):
         call.arguments.forEach { it.accept(this) }
     }
 
+    override fun visit(get: Expr.Get) {
+        get.obj.accept(this)
+    }
+
+    override fun visit(set: Expr.Set) {
+        set.value.accept(this)
+        set.obj.accept(this)
+    }
+
     override fun visit(funDef: Expr.FunDef) = newScope { scope ->
         funDef.params.forEach { scope.add(it.lexeme) }
         funDef.body.accept(this)
     }
+
+    override fun visit(t: Expr.This) = resolveLocal(t, t.where)
 
     override fun visit(expression: Stmt.Expression) = expression.expression.accept(this)
 
@@ -80,6 +94,15 @@ class Resolver(val resolverFunc: (Expr, Int) -> Unit, val globals: Set<String>):
         // allow self reference
         scopes.lastOrNull()?.add(funDecl.name.lexeme)
         funDecl.body.accept(this)
+    }
+
+    override fun visit(classDecl: Stmt.ClassDecl) {
+        scopes.lastOrNull()?.add(classDecl.name.lexeme)
+
+        newScope {
+            scopes.lastOrNull()?.add("this")
+            classDecl.methods.forEach { visit(it) }
+        }
     }
 
     private fun resolveLocal(expr: Expr, name: Token) {
