@@ -64,14 +64,18 @@ class Lexer(val source: String, val reportError: (Int, String) -> Unit) {
     }
 
     private fun advance(): Char {
-        return source[current++]
+        val c = source[current++]
+
+        if (c == '\n') line++
+
+        return c
     }
 
     private fun match(expected: Char): Boolean {
         val next = source.elementAtOrNull(current) ?: return false
         if (next != expected) return false
 
-        current++
+        advance()
         return true
     }
 
@@ -153,11 +157,21 @@ class Lexer(val source: String, val reportError: (Int, String) -> Unit) {
             '/' -> if (match('/')) {
                 // comment
                 while (peek() != '\n' && !isAtEnd()) advance()
+            } else if (match('*')) {
+                // go until we find "*/"
+                while (peek() != '*' && peek(1) != '/' && !isAtEnd()) advance()
+
+                if (isAtEnd()) {
+                    reportError(line, "Unclosed comment")
+                } else {
+                    // consume '*' and '/'
+                    advance()
+                    advance()
+                }
             } else {
                 addToken(TokenType.SLASH)
             }
-            ' ', '\r', '\t' -> {}
-            '\n' -> line++
+            ' ', '\r', '\n', '\t' -> {}
             '"' -> scanString()
             else -> if (c.isDigit()) {
                 scanNumber()
