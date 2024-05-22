@@ -51,13 +51,13 @@ class Token(val type: TokenType, val lexeme: String, val literal: Any?, val line
     }
 }
 
-class Lexer(val source: String, val reportError: (Int, String) -> Unit) {
+class Lexer(private val source: String, private val reportError: (Int, String) -> Unit) {
 
     val tokens = mutableListOf<Token>()
 
-    var start = 0
-    var current = 0
-    var line = 1
+    private var start = 0
+    private var current = 0
+    private var line = 1
 
     private fun isAtEnd(): Boolean {
         return current >= source.length
@@ -101,7 +101,6 @@ class Lexer(val source: String, val reportError: (Int, String) -> Unit) {
 
     private fun scanString() {
         while (peek() != '"' && !isAtEnd()) {
-            if (peek() == '\n') line++
             advance()
         }
 
@@ -136,8 +135,7 @@ class Lexer(val source: String, val reportError: (Int, String) -> Unit) {
     }
 
     private fun scanToken() {
-        val c = advance()
-        when(c) {
+        when(val c = advance()) {
             '(' -> addToken(TokenType.LPAREN)
             ')' -> addToken(TokenType.RPAREN)
             '{' -> addToken(TokenType.LBRACE)
