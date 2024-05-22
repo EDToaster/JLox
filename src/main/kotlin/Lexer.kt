@@ -87,6 +87,12 @@ class Lexer(private val source: String, private val reportError: (Int, String) -
         return source.elementAtOrNull(current + offset)
     }
 
+    private fun peekRange(range: IntRange): String {
+        val start = (current + range.first).coerceAtMost(source.length - 1)
+        val end = (current + range.last).coerceAtMost(source.length - 1)
+        return source.substring(start..end)
+    }
+
     private fun currString(): String {
         return source.substring(start..<current)
     }
@@ -134,6 +140,27 @@ class Lexer(private val source: String, private val reportError: (Int, String) -
         addToken(TokenType.keywordOf(currString()) ?: TokenType.IDENT)
     }
 
+    /**
+     * Scans a block comment assuming the starting delimiters have already been consumed.
+     */
+    private fun scanBlockComment() {
+        var depth = 1
+
+        while (depth > 0 && !isAtEnd()) {
+            val nextTwo = peekRange(0..1)
+            if (nextTwo == "/*") depth++
+            if (nextTwo == "*/") depth--
+
+            advance()
+        }
+
+        if (isAtEnd()) {
+            reportError(line, "Unclosed comment")
+        } else {
+            advance()
+        }
+    }
+
     private fun scanToken() {
         when(val c = advance()) {
             '(' -> addToken(TokenType.LPAREN)
@@ -156,16 +183,7 @@ class Lexer(private val source: String, private val reportError: (Int, String) -
                 // comment
                 while (peek() != '\n' && !isAtEnd()) advance()
             } else if (match('*')) {
-                // go until we find "*/"
-                while (peek() != '*' && peek(1) != '/' && !isAtEnd()) advance()
-
-                if (isAtEnd()) {
-                    reportError(line, "Unclosed comment")
-                } else {
-                    // consume '*' and '/'
-                    advance()
-                    advance()
-                }
+                scanBlockComment()
             } else {
                 addToken(TokenType.SLASH)
             }
