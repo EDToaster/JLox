@@ -59,8 +59,8 @@ class Lexer(private val source: String, private val reportError: (Int, String) -
     private var current = 0
     private var line = 1
 
-    private fun isAtEnd(): Boolean {
-        return current >= source.length
+    private fun isAtEnd(ahead: Int = 0): Boolean {
+        return current + ahead >= source.length
     }
 
     private fun advance(): Char {
@@ -146,18 +146,14 @@ class Lexer(private val source: String, private val reportError: (Int, String) -
     private fun scanBlockComment() {
         var depth = 1
 
-        while (depth > 0 && !isAtEnd()) {
-            val nextTwo = peekRange(0..1)
-            if (nextTwo == "/*") depth++
-            if (nextTwo == "*/") depth--
-
-            advance()
+        while (depth > 0 && !isAtEnd(1)) {
+            if (match('/') && match('*')) depth++
+            else if (match('*') && match('/')) depth--
+            else advance()
         }
 
-        if (isAtEnd()) {
+        if (depth > 0) {
             reportError(line, "Unclosed comment")
-        } else {
-            advance()
         }
     }
 
