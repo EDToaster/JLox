@@ -1,7 +1,7 @@
 import ast.Expr
 import ast.Stmt
 
-class Resolver(val resolverFunc: (Expr, Int) -> Unit, val globals: Set<String>): Expr.Visitor<Unit>, Stmt.Visitor<Unit> {
+class Resolver(val resolverFunc: (Expr, Int) -> Unit, private val globals: Set<String>): Expr.Visitor<Unit>, Stmt.Visitor<Unit> {
 
     private val scopes = ArrayDeque<MutableSet<String>>()
 
@@ -24,6 +24,10 @@ class Resolver(val resolverFunc: (Expr, Int) -> Unit, val globals: Set<String>):
     override fun visit(grouping: Expr.Grouping) = grouping.expr.accept(this)
 
     override fun visit(literal: Expr.Literal) {}
+
+    override fun visit(literal: Expr.StringLiteral) {
+        literal.prefixes.map { it.second }.forEach { it.accept(this) }
+    }
 
     override fun visit(variable: Expr.Variable) = resolveLocal(variable, variable.name)
 

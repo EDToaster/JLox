@@ -7,7 +7,7 @@ import kotlin.system.exitProcess
 
 class Lox {
 
-    val environment = Environment()
+    private val environment = Environment()
 
     init {
         environment.run {
@@ -39,61 +39,64 @@ class Lox {
         }
     }
 
-    val interpreter = Interpreter(environment)
-    val resolver = Resolver(interpreter.locals::put, environment.boundNames())
-    val astPrinter = ASTPrinter()
-
-    var runtimeErrored = false
-    var errored = false
+    private val interpreter = Interpreter(environment)
+    private val resolver = Resolver(interpreter.locals::put, environment.boundNames())
+    private val astPrinter = ASTPrinter()
 
     // Runs the following prog, may be an incomplete fragment
-    private fun run(prog: String) {
-        val lexer = Lexer(prog, ::reportError)
-        lexer.scanTokens()
-        val parser = Parser(lexer.tokens, ::report)
-        val stmts = parser.parse() ?: return
+    private fun run(reader: BufferedReader, showPrompt: Boolean = false) {
+
+        lateinit var parser: Parser
+
+        val iter: Iterator<Char> = if (showPrompt) {
+            sequence {
+                while (true) {
+                    val ctx = parser.context
+
+                    val prompt = when(ctx) {
+                        Parser.Context.None -> "> "
+                        Parser.Context.If -> "if ... "
+                        Parser.Context.ThenBody -> "then ... "
+                        Parser.Context.ElseBody -> "else ... "
+                        Parser.Context.Block -> "block ... "
+                    }
+
+                    print(prompt)
+
+                    val line = reader.readLine() ?: break
+                    yieldAll(line.iterator())
+                    yield('\n')
+                }
+            }.iterator()
+        } else {
+            reader.iter()
+        }
+
+
+        val lexer = Lexer(iter)
+        parser = Parser(lexer.scanTokens().iterator())
 
         try {
-            stmts.forEach {
-                // TODO: CHALLENGERS chapter 11.
+            for (it in parser.parseProgram()) {
+                // TODO: CHALLENGES chapter 11.
                 resolver.resolve(it)
-                if (errored) return@forEach
                 interpreter.interpret(it)
             }
         } catch (e: InterpreterError) {
-            reportInterpreterError(e)
-            runtimeErrored = true
+            println("${e.message}\n[line ${e.token.line}]")
         }
     }
 
     fun runFile(fileName: String): Int {
         val bytes = Files.readAllBytes(Paths.get(fileName))
-        run(bytes.toString(Charset.defaultCharset()))
-        return if (errored) 65 else if (runtimeErrored) 70 else 0
-    }
-
-    fun runPrompt(): Int {
-        BufferedReader(InputStreamReader(System.`in`)).use {
-            while (true) {
-                print("> ")
-                run(it.readLine() ?: break)
-                errored = false
-            }
-        }
+        run(bytes.toString(Charset.defaultCharset()).reader().buffered())
         return 0
     }
 
-    fun reportError(line: Int, message: String) {
-        report(line, "", message)
-    }
-
-    fun reportInterpreterError(error: InterpreterError) {
-        println("${error.message}\n[line ${error.token.line}]")
-    }
-
-    private fun report(line: Int, where: String, message: String) {
-        println("[line $line] Error$where: $message")
-        errored = true
+    fun runPrompt(): Int {
+        val underlying = InputStreamReader(System.`in`).buffered()
+        run(underlying, showPrompt = true)
+        return 0
     }
 }
 

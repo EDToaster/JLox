@@ -6,6 +6,7 @@ sealed class Expr {
     class Binary(val operator: Token, val left: Expr, val right: Expr): Expr()
     class Grouping(val expr: Expr): Expr()
     class Literal(val value: Any?): Expr()
+    class StringLiteral(val prefixes: List<Pair<String, Expr>>, val rest: String): Expr()
     class Variable(val name: Token): Expr()
     class Unary(val operator: Token, val right: Expr): Expr()
     class Ternary(val cond: Expr, val t: Expr, val e: Expr): Expr()
@@ -20,6 +21,7 @@ sealed class Expr {
         is Binary -> visitor.visit(this)
         is Grouping -> visitor.visit(this)
         is Literal -> visitor.visit(this)
+        is StringLiteral -> visitor.visit(this)
         is Variable -> visitor.visit(this)
         is Unary -> visitor.visit(this)
         is Ternary -> visitor.visit(this)
@@ -35,6 +37,7 @@ sealed class Expr {
         fun visit(binary: Binary): R
         fun visit(grouping: Grouping): R
         fun visit(literal: Literal): R
+        fun visit(literal: StringLiteral): R
         fun visit(variable: Variable): R
         fun visit(unary: Unary): R
         fun visit(ternary: Ternary): R

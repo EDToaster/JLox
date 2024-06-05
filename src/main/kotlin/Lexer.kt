@@ -1,3 +1,5 @@
+import java.io.Reader
+
 enum class TokenType {
     LPAREN, RPAREN, LBRACE, RBRACE,
     COMMA, DOT, MINUS, PLUS, SEMI, SLASH, STAR,
@@ -9,7 +11,7 @@ enum class TokenType {
     // TERNARY
     QUESTION, COLON,
 
-    IDENT, STRING, NUM,
+    IDENT, STRING, STRING_INTERP, NUM,
 
     // KEYWORDS
     AND, CLASS, ELSE, FALSE, FUN, FOR, IF, NIL, OR, RETURN, SUPER, THIS, TRUE, VAR, WHILE,
@@ -51,158 +53,166 @@ class Token(val type: TokenType, val lexeme: String, val literal: Any?, val line
     }
 }
 
-class Lexer(private val source: String, private val reportError: (Int, String) -> Unit) {
+class Lexer(inputstream: Iterator<Char>) {
 
-    val tokens = mutableListOf<Token>()
+    private val currLexeme = StringBuilder()
+    private val buffer = inputstream.peeking()
 
-    private var start = 0
-    private var current = 0
+    // Keep track of the current line
     private var line = 1
 
-    private fun isAtEnd(ahead: Int = 0): Boolean {
-        return current + ahead >= source.length
-    }
+    private fun isAtEnd() = !buffer.hasNext()
 
     private fun advance(): Char {
-        val c = source[current++]
-
-        if (c == '\n') line++
-
-        return c
+        val nextChar = buffer.next()
+        currLexeme.append(nextChar)
+        if (nextChar == '\n') line++
+        return nextChar
     }
 
-    private fun match(expected: Char): Boolean {
-        val next = source.elementAtOrNull(current) ?: return false
-        if (next != expected) return false
-
+    private fun match(c: Char): Boolean = if (peek() == c) {
         advance()
-        return true
+        true
+    } else {
+        false
     }
 
-    private fun peek(): Char? {
-        return peek(0)
+    private fun peek(): Char = buffer.peek()
+
+    private fun token(type: TokenType, literal: Any? = null, lstrip: Int = 0, rstrip: Int = 0): Token {
+        val l = currLexeme.toString()
+        return Token(type, l.substring(lstrip, l.length-rstrip), literal, line)
     }
 
-    private fun peek(offset: Int): Char? {
-        return source.elementAtOrNull(current + offset)
+    /**
+     * Takes characters until seeing c
+     */
+    private fun takeUntil(c: Char, consumeMatch: Boolean = false) {
+        takeUntil(c::equals, consumeMatch)
     }
 
-    private fun peekRange(range: IntRange): String {
-        val start = (current + range.first).coerceAtMost(source.length - 1)
-        val end = (current + range.last).coerceAtMost(source.length - 1)
-        return source.substring(start..end)
+    private fun takeUntil(pred: (Char) -> Boolean, consumeMatch: Boolean = false) {
+        while (!isAtEnd() && !pred(peek())) advance()
+        if (!isAtEnd() && consumeMatch) advance()
     }
 
-    private fun currString(): String {
-        return source.substring(start..<current)
+    private fun takeWhile(pred: (Char) -> Boolean) {
+        takeUntil({ !pred(it) })
     }
 
-    private fun addToken(type: TokenType) {
-        addToken(type, null)
+    private fun finishString(): Sequence<Token> = sequence {
+        currLexeme.clear()
+
+        // keep going until we hit ${ or "
+        var dollar = false
+        while (!isAtEnd()) {
+            val c = advance()
+            if (c == '"') {
+                val literal = currLexeme.toString()
+                yield(token(TokenType.STRING, literal = literal.substring(0, literal.length - 1), rstrip = 1))
+                return@sequence
+            } else if (dollar && c == '{') {
+                // we have a string interp sequence!
+                val literal = currLexeme.toString()
+                yield(token(TokenType.STRING_INTERP, literal = literal.substring(0, literal.length - 2), rstrip = 2))
+                yieldAll(scanTokens())
+                // continue lexing string
+                yieldAll(finishString())
+                return@sequence
+            } else if (c == '$') {
+                dollar = true
+            }
+        }
     }
 
-    private fun addToken(type: TokenType, literal: Any?) {
-        tokens.add(Token(type, currString(), literal, line))
-    }
-
-    private fun scanString() {
-        while (peek() != '"' && !isAtEnd()) {
-            advance()
+    private fun finishNumber(): Token {
+        takeWhile(Char::isDigit)
+        // optionally consume a '.'
+        if (match('.')) {
+            takeWhile(Char::isDigit)
         }
 
-        if (isAtEnd()) {
-            reportError(line, "Unterminated string")
-            return
-        }
-
-        advance()
-
-        val value = source.substring(start + 1..< current - 1 )
-        addToken(TokenType.STRING, value)
+        return token(TokenType.NUM, literal = currLexeme.toString().toDouble())
     }
 
-    private fun scanNumber() {
-        while (peek()?.isDigit() == true) advance()
+    private fun finishIdentifier(): Token {
+        takeWhile(Char::isJavaIdentifierPart)
 
-        if (peek() == '.' && peek(1)?.isDigit() == true) {
-            // consume dot
-            advance()
-            while (peek()?.isDigit() == true) advance()
-        }
-
-        addToken(TokenType.NUM, currString().toDouble())
+        return token(TokenType.keywordOf(currLexeme.toString()) ?: TokenType.IDENT)
     }
 
-    private fun scanIdentifier() {
-        // Identifiers are [_a-zA-Z][_0-9a-zA-Z]*
-        while (peek()?.isJavaIdentifierPart() == true) advance()
 
-        addToken(TokenType.keywordOf(currString()) ?: TokenType.IDENT)
+    private fun finishLineComment() {
+        takeUntil('\n', consumeMatch = true)
     }
 
     /**
      * Scans a block comment assuming the starting delimiters have already been consumed.
      */
-    private fun scanBlockComment() {
+    private fun finishBlockComment() {
         var depth = 1
 
-        while (depth > 0 && !isAtEnd(1)) {
+        while (depth > 0 && !isAtEnd()) {
             if (match('/') && match('*')) depth++
             else if (match('*') && match('/')) depth--
             else advance()
         }
 
         if (depth > 0) {
-            reportError(line, "Unclosed comment")
+            throw LexerError(line, "Unclosed comment")
         }
     }
 
-    private fun scanToken() {
-        when(val c = advance()) {
-            '(' -> addToken(TokenType.LPAREN)
-            ')' -> addToken(TokenType.RPAREN)
-            '{' -> addToken(TokenType.LBRACE)
-            '}' -> addToken(TokenType.RBRACE)
-            ',' -> addToken(TokenType.COMMA)
-            '.' -> addToken(TokenType.DOT)
-            '-' -> addToken(TokenType.MINUS)
-            '+' -> addToken(TokenType.PLUS)
-            ';' -> addToken(TokenType.SEMI)
-            '*' -> addToken(TokenType.STAR)
-            '?' -> addToken(TokenType.QUESTION)
-            ':' -> addToken(TokenType.COLON)
-            '!' -> addToken(if (match('=')) TokenType.BANG_EQUAL else TokenType.BANG)
-            '=' -> addToken(if (match('=')) TokenType.EQUAL_EQUAL else TokenType.EQUAL)
-            '<' -> addToken(if (match('=')) TokenType.LEQ else TokenType.LT)
-            '>' -> addToken(if (match('=')) TokenType.GEQ else TokenType.GT)
-            '/' -> if (match('/')) {
-                // comment
-                while (peek() != '\n' && !isAtEnd()) advance()
-            } else if (match('*')) {
-                scanBlockComment()
-            } else {
-                addToken(TokenType.SLASH)
-            }
-            ' ', '\r', '\n', '\t' -> {}
-            '"' -> scanString()
-            else -> if (c.isDigit()) {
-                scanNumber()
-            } else if (c.isJavaIdentifierStart()) {
-                // Scan identifier/keywords
-                scanIdentifier()
-            } else {
-                reportError(line, "Unexpected character $c")
-            }
-        }
-    }
-
-    fun scanTokens() {
+    fun scanTokens(): Sequence<Token> = sequence {
         while (!isAtEnd()) {
-            start = current
-            scanToken()
+            currLexeme.clear()
+
+            when (val c = advance()) {
+                '(' -> yield(token(TokenType.LPAREN))
+                ')' -> yield(token(TokenType.RPAREN))
+                '{' -> {
+                    yield(token(TokenType.LBRACE))
+                    yieldAll(scanTokens())
+                }
+                '}' -> {
+                    yield(token(TokenType.RBRACE))
+                    return@sequence
+                }
+                ',' -> yield(token(TokenType.COMMA))
+                '.' -> yield(token(TokenType.DOT))
+                '-' -> yield(token(TokenType.MINUS))
+                '+' -> yield(token(TokenType.PLUS))
+                ';' -> yield(token(TokenType.SEMI))
+                '*' -> yield(token(TokenType.STAR))
+                '?' -> yield(token(TokenType.QUESTION))
+                ':' -> yield(token(TokenType.COLON))
+                '!' -> yield(token(if (match('=')) TokenType.BANG_EQUAL else TokenType.BANG))
+                '=' -> yield(token(if (match('=')) TokenType.EQUAL_EQUAL else TokenType.EQUAL))
+                '<' -> yield(token(if (match('=')) TokenType.LEQ else TokenType.LT))
+                '>' -> yield(token(if (match('=')) TokenType.GEQ else TokenType.GT))
+                '/' -> if (match('/')) {
+                    finishLineComment()
+                } else if (match('*')) {
+                    finishBlockComment()
+                } else {
+                    yield(token(TokenType.SLASH))
+                }
+                ' ', '\r', '\n', '\t' -> {}
+                '"' -> yieldAll(finishString())
+                else -> if (c.isDigit()) {
+                    yield(finishNumber())
+                } else if (c.isJavaIdentifierStart()) {
+                    // Scan identifier/keywords
+                    yield(finishIdentifier())
+                } else {
+                    throw LexerError(line, "Unexpected character $c")
+                }
+            }
         }
 
-        tokens.add(Token(TokenType.EOF, "", null, line))
+        yield(Token(TokenType.EOF, "", null, line))
     }
 
 }
+
+class LexerError(val line: Int, message: String) : RuntimeException(message)

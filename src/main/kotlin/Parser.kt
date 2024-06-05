@@ -12,6 +12,9 @@ class ASTPrinter: Expr.Visitor<String>, Stmt.Visitor<String> {
     override fun visit(literal: Expr.Literal): String =
         "${literal.value ?: "nil"}"
 
+    override fun visit(literal: Expr.StringLiteral): String =
+        TODO()
+
     override fun visit(variable: Expr.Variable): String = variable.name.lexeme
 
     override fun visit(unary: Expr.Unary): String =
@@ -23,25 +26,21 @@ class ASTPrinter: Expr.Visitor<String>, Stmt.Visitor<String> {
     override fun visit(assign: Expr.Assign): String =
         "${assign.name.lexeme} ${assign.value.accept(this)}"
 
-    override fun visit(call: Expr.Call): String {
-        TODO()
-    }
+    override fun visit(call: Expr.Call): String =
+        "${call.callee.accept(this)}(${call.arguments.joinToString(", ") { it.accept(this) }})"
 
-    override fun visit(get: Expr.Get): String {
-        TODO("Not yet implemented")
-    }
 
-    override fun visit(set: Expr.Set): String {
-        TODO("Not yet implemented")
-    }
+    override fun visit(get: Expr.Get): String =
+        "${get.obj.accept(this)}.${get.name.lexeme}"
 
-    override fun visit(funDef: Expr.FunDef): String {
-        TODO("Not yet implemented")
-    }
+    override fun visit(set: Expr.Set): String =
+        "${set.obj.accept(this)}.${set.name.lexeme} = ${set.value.accept(this)}"
 
-    override fun visit(t: Expr.This): String {
-        TODO("Not yet implemented")
-    }
+    override fun visit(funDef: Expr.FunDef): String =
+        "fn ${funDef.name?.lexeme ?: "anonymous"}(${funDef.params.joinToString(", ") { it.lexeme }}) ${funDef.body.accept(this)}"
+
+    override fun visit(t: Expr.This): String =
+        "this"
 
     override fun visit(expression: Stmt.Expression): String =
         "${expression.expression.accept(this)} ;"
@@ -49,13 +48,11 @@ class ASTPrinter: Expr.Visitor<String>, Stmt.Visitor<String> {
     override fun visit(decl: Stmt.Decl): String =
         "var ${decl.name.lexeme} = ${decl.init?.accept(this) ?: "no init"} ;"
 
-    override fun visit(funDecl: Stmt.FunDecl): String {
-        TODO("Not yet implemented")
-    }
+    override fun visit(funDecl: Stmt.FunDecl): String =
+        funDecl.body.accept(this)
 
-    override fun visit(classDecl: Stmt.ClassDecl): String {
-        TODO("Not yet implemented")
-    }
+    override fun visit(classDecl: Stmt.ClassDecl): String =
+        "class ${classDecl.name.lexeme} { ... }"
 
     override fun visit(block: Stmt.Block): String =
         "{ ${block.body.joinToString(" ") { it.accept(this) }} }"
@@ -69,26 +66,45 @@ class ASTPrinter: Expr.Visitor<String>, Stmt.Visitor<String> {
     override fun visit(breakStmt: Stmt.Break): String =
         "break ;"
 
-    override fun visit(retStmt: Stmt.Return): String {
-        TODO("Not yet implemented")
-    }
+    override fun visit(retStmt: Stmt.Return): String =
+        "return ${retStmt.value?.accept(this) ?: "no value"}"
 }
 
+class Parser(tokens: Iterator<Token>) {
 
-class Parser(private val tokens: List<Token>, val reportError: (Int, String, String) -> Unit) {
-    private var current = 0
+    enum class Context {
+        None,
+        If,
+        ThenBody,
+        ElseBody,
+        Block,
+    }
 
-    private fun peek(): Token = tokens[current]
+    var context = Context.None
+        private set
 
-    private fun previous(): Token = tokens[current - 1]
+    private fun <T> withContext(context: Context, block: () -> T): T{
+        val prevContext = this.context
+        this.context = context
+        val ret = block()
+        this.context = prevContext
+        return ret
+    }
+
+    private val tokens: PeekingIterator<Token> = tokens.peeking()
+    private lateinit var previousToken: Token
 
     private fun isAtEnd(): Boolean = peek().type == TokenType.EOF
-
-    private fun check(type: TokenType): Boolean = !isAtEnd() && peek().type == type
-
+    private fun peek(): Token = tokens.peek()
+    private fun previous(): Token = previousToken
     private fun advance(): Token {
-        if (!isAtEnd()) current++
-        return previous()
+        val next = tokens.next()
+        previousToken = next
+        return next
+    }
+
+    private fun check(type: TokenType): Boolean {
+        return !isAtEnd() && peek().type == type
     }
 
     private fun match(vararg possibleTypes: TokenType): Boolean {
@@ -149,16 +165,10 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
      * printStmt      → "print" expression ";" ;
      */
 
-    private fun program(): List<Stmt> {
-        val stmts = mutableListOf<Stmt>()
+    fun parseProgram() = sequence {
         while (!isAtEnd()) {
-            try {
-                stmts.add(declaration())
-            } catch (e: ParseError) {
-                synchronize()
-            }
+            yield(declaration())
         }
-        return stmts
     }
 
     private fun declaration(): Stmt {
@@ -202,25 +212,25 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
         else Stmt.Expression(semiStmt())
     }
 
-    private fun block(): List<Stmt> {
+    private fun block(): List<Stmt> = withContext(Context.Block) {
         val stmts = mutableListOf<Stmt>()
         while (!check(TokenType.RBRACE) && !isAtEnd()) {
             stmts.add(declaration())
         }
 
         consume(TokenType.RBRACE, "Expected '}' after a block")
-        return stmts
+        stmts
     }
 
-    private fun ifStmt(): Stmt {
+    private fun ifStmt(): Stmt = withContext(Context.If) {
         consume(TokenType.LPAREN, "Expected '(' after 'if'")
         val cond = expression()
         consume(TokenType.RPAREN, "Expected ')' after if")
 
-        val thenBranch = statement()
-        val elseBranch = if (match(TokenType.ELSE)) statement() else null
+        val thenBranch = withContext(Context.ThenBody) { statement() }
+        val elseBranch = if (match(TokenType.ELSE)) withContext(Context.ElseBody) { statement() } else null
 
-        return Stmt.IfStmt(cond, thenBranch, elseBranch)
+        Stmt.IfStmt(cond, thenBranch, elseBranch)
     }
 
     private fun whileStmt(): Stmt {
@@ -331,7 +341,7 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
                 return Expr.Set(expr.obj, expr.name, value)
             }
 
-            reportError(equals, "Invalid l-value")
+            throw ParseError(equals.line, "Invalid l-value")
         }
 
         // is actually r-value
@@ -414,7 +424,9 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
         if (match(TokenType.TRUE)) return Expr.Literal(true)
         if (match(TokenType.NIL)) return Expr.Literal(null)
 
-        if (match(TokenType.NUM, TokenType.STRING)) return Expr.Literal(previous().literal)
+        if (match(TokenType.NUM)) return Expr.Literal(previous().literal)
+
+        if (match(TokenType.STRING_INTERP, TokenType.STRING)) return stringInterp()
 
         if (match(TokenType.THIS)) return Expr.This(previous())
         if (match(TokenType.IDENT)) return Expr.Variable(previous())
@@ -427,42 +439,37 @@ class Parser(private val tokens: List<Token>, val reportError: (Int, String, Str
 
         // TODO: ERROR PRODUCTION chapter 06.
 
-        reportError(peek(), "Expected expression")
-        throw ParseError()
+        throw ParseError(peek().line, "Expected expression")
     }
 
-    fun parse(): List<Stmt>? = try {
-            program()
-        } catch (e: ParseError) {
-            null
+    private fun stringInterp(): Expr {
+        val pairs = mutableListOf<Pair<String, Expr>>()
+
+        while (true) {
+            when (previous().type) {
+                TokenType.STRING -> {
+                    return Expr.StringLiteral(pairs, previous().literal as String)
+                }
+                TokenType.STRING_INTERP -> {
+                    val prev = previous()
+                    val expr = expression()
+                    consume(TokenType.RBRACE, "Expected '}' after string expression'")
+                    pairs.add(prev.literal as String to expr)
+                }
+                else -> {
+                    throw ParseError(previous().line, "Malformed string interpolation expression")
+                }
+            }
+
+            advance()
         }
+    }
 
     // Error handle
     private fun consume(type: TokenType, message: String): Token {
         if (check(type)) return advance()
-        reportError(peek(), message)
-        throw ParseError()
-    }
-
-    private fun reportError(token: Token, message: String) {
-        if (token.type == TokenType.EOF) {
-            reportError(token.line, " at end", message);
-        } else {
-            reportError(token.line, " at '${token.lexeme}'", message);
-        }
-    }
-
-    private fun synchronize() {
-        advance()
-
-        while (!isAtEnd()) {
-            if (previous().type == TokenType.SEMI) return
-            when(peek().type) {
-                TokenType.CLASS, TokenType.FUN, TokenType.VAR, TokenType.FOR, TokenType.IF, TokenType.WHILE, TokenType.RETURN -> return
-                else -> advance()
-            }
-        }
+        throw ParseError(peek().line, message)
     }
 }
 
-class ParseError: RuntimeException()
+class ParseError(val line: Int, message: String) : RuntimeException(message)

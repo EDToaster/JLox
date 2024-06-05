@@ -55,7 +55,9 @@ class Interpreter(internal var env: Environment): Expr.Visitor<Any?>, Stmt.Visit
             } else if (right is String) {
                 left.toJLoxString() + right
             } else {
-                throw InterpreterError(binary.operator,"Expected operands to be numbers or first either operand to be a string")
+                println(left)
+                println(right)
+                throw InterpreterError(binary.operator,"Expected operands to be numbers or either operand to be a string")
             }
 
             TokenType.SLASH -> assertDoubles(binary.operator, left, right) { a, b -> a / b }
@@ -76,6 +78,9 @@ class Interpreter(internal var env: Environment): Expr.Visitor<Any?>, Stmt.Visit
     override fun visit(grouping: Expr.Grouping): Any? = grouping.expr.accept(this)
 
     override fun visit(literal: Expr.Literal): Any? = literal.value
+
+    override fun visit(literal: Expr.StringLiteral): String =
+        literal.prefixes.joinToString("") { (a, b) -> "$a${b.accept(this)}" } + literal.rest
 
     override fun visit(variable: Expr.Variable): Any?
         = env.get(variable.name.lexeme, locals[variable]!!)
