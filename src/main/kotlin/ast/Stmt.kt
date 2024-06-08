@@ -2,16 +2,19 @@ package ast
 
 import Token
 
+data class MatchClause(val isDefault: Boolean, val conditions: List<Expr>, val body: Stmt)
+
 sealed class Stmt {
-    class Expression(val expression: Expr): Stmt()
-    class Decl(val name: Token, val init: Expr?): Stmt()
-    class FunDecl(val name: Token, val body: Expr.FunDef): Stmt()
-    class ClassDecl(val name: Token, val methods: List<FunDecl>): Stmt()
-    class Block(val body: List<Stmt>): Stmt()
-    class IfStmt(val cond: Expr, val t: Stmt, val e: Stmt?): Stmt()
-    class WhileStmt(val cond: Expr, val body: Stmt?): Stmt()
+    data class Expression(val expression: Expr): Stmt()
+    data class Decl(val name: Token, val init: Expr?): Stmt()
+    data class FunDecl(val name: Token, val body: Expr.FunDef): Stmt()
+    data class ClassDecl(val name: Token, val methods: List<FunDecl>): Stmt()
+    data class Block(val body: List<Stmt>): Stmt()
+    data class IfStmt(val cond: Expr, val t: Stmt, val e: Stmt?): Stmt()
+    data class WhileStmt(val cond: Expr, val body: Stmt?): Stmt()
+    data class MatchStmt(val obj: Expr, val clauses: List<MatchClause>): Stmt()
     data object Break : Stmt()
-    class Return(val value: Expr?): Stmt()
+    data class Return(val value: Expr?): Stmt()
 
     fun <R> accept(visitor: Visitor<R>): R = when (this) {
         is Expression -> visitor.visit(this)
@@ -21,6 +24,7 @@ sealed class Stmt {
         is Block -> visitor.visit(this)
         is IfStmt -> visitor.visit(this)
         is WhileStmt -> visitor.visit(this)
+        is MatchStmt -> visitor.visit(this)
         is Break -> visitor.visit(this)
         is Return -> visitor.visit(this)
     }
@@ -33,6 +37,7 @@ sealed class Stmt {
         fun visit(block: Block): R
         fun visit(ifStmt: IfStmt): R
         fun visit(whileStmt: WhileStmt): R
+        fun visit(matchStmt: MatchStmt): R
         fun visit(breakStmt: Break): R
         fun visit(retStmt: Return): R
     }

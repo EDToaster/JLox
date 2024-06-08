@@ -1,7 +1,10 @@
 import ast.Expr
 import ast.Stmt
 
-class LoxFunction(val interpreter: Interpreter, val declaration: Expr.FunDef, val closure: Environment): LoxCallable {
+class LoxFunction(private val interpreter: Interpreter, private val declaration: Expr.FunDef, private val closure: Environment): LoxCallable {
+
+    private val arity: Int = declaration.params.size
+
     override fun call(args: List<Any?>): Any? = interpreter.newScope(Environment(closure)) {
         // Bind parameters
         declaration.params.map { it.lexeme }.zip(args).forEach { (param, arg) -> interpreter.env.declare(param, arg) }
@@ -13,7 +16,7 @@ class LoxFunction(val interpreter: Interpreter, val declaration: Expr.FunDef, va
         }
     }
 
-    override fun arity(): Int = declaration.params.size
+    override fun arity(): Int = arity
 
     override fun toString(): String = "<fun ${declaration.name?.lexeme ?: "anonymous"}#${arity()}>"
 
@@ -192,6 +195,22 @@ class Interpreter(internal var env: Environment): Expr.Visitor<Any?>, Stmt.Visit
                 whileStmt.body?.accept(this)
             } catch (e: BreakException) {
                 break
+            }
+        }
+    }
+
+    override fun visit(matchStmt: Stmt.MatchStmt) {
+        // first evaluate the obj
+        val obj = matchStmt.obj.accept(this)
+
+        // check if any match clauses are equal
+        matchStmt.clauses.forEach { clause ->
+            if (clause.isDefault) {
+                clause.body.accept(this)
+                return@visit
+            } else if (clause.conditions.any { it.accept(this) == obj }) {
+                clause.body.accept(this)
+                return@visit
             }
         }
     }

@@ -1,11 +1,9 @@
-import java.io.Reader
-
 enum class TokenType {
     LPAREN, RPAREN, LBRACE, RBRACE,
     COMMA, DOT, MINUS, PLUS, SEMI, SLASH, STAR,
+    BAR,
 
-
-    BANG, BANG_EQUAL, EQUAL, EQUAL_EQUAL,
+    BANG, BANG_EQUAL, EQUAL, EQUAL_EQUAL, FAT_ARROW,
     GT, GEQ, LT, LEQ,
 
     // TERNARY
@@ -14,7 +12,7 @@ enum class TokenType {
     IDENT, STRING, STRING_INTERP, NUM,
 
     // KEYWORDS
-    AND, CLASS, ELSE, FALSE, FUN, FOR, IF, NIL, OR, RETURN, SUPER, THIS, TRUE, VAR, WHILE,
+    AND, CLASS, ELSE, FALSE, FUN, FOR, IF, NIL, OR, RETURN, SUPER, THIS, TRUE, VAR, WHILE, MATCH,
 
     // CONTROL FLOW KEYWORDS
     BREAK,
@@ -40,6 +38,7 @@ enum class TokenType {
                 "this" -> THIS
                 "var" -> VAR
                 "break" -> BREAK
+                "match" -> MATCH
                 else -> null
             }
         }
@@ -186,26 +185,26 @@ class Lexer(inputstream: Iterator<Char>) {
                 '*' -> yield(token(TokenType.STAR))
                 '?' -> yield(token(TokenType.QUESTION))
                 ':' -> yield(token(TokenType.COLON))
+                '|' -> yield(token(TokenType.BAR))
                 '!' -> yield(token(if (match('=')) TokenType.BANG_EQUAL else TokenType.BANG))
-                '=' -> yield(token(if (match('=')) TokenType.EQUAL_EQUAL else TokenType.EQUAL))
+                '=' -> when {
+                    match('=') -> yield(token(TokenType.EQUAL_EQUAL))
+                    match('>') -> yield(token(TokenType.FAT_ARROW))
+                    else -> yield(token(TokenType.EQUAL))
+                }
                 '<' -> yield(token(if (match('=')) TokenType.LEQ else TokenType.LT))
                 '>' -> yield(token(if (match('=')) TokenType.GEQ else TokenType.GT))
-                '/' -> if (match('/')) {
-                    finishLineComment()
-                } else if (match('*')) {
-                    finishBlockComment()
-                } else {
-                    yield(token(TokenType.SLASH))
+                '/' -> when {
+                    match('/') -> finishLineComment()
+                    match('*') -> finishBlockComment()
+                    else -> yield(token(TokenType.SLASH))
                 }
-                ' ', '\r', '\n', '\t' -> {}
                 '"' -> yieldAll(finishString())
-                else -> if (c.isDigit()) {
-                    yield(finishNumber())
-                } else if (c.isJavaIdentifierStart()) {
-                    // Scan identifier/keywords
-                    yield(finishIdentifier())
-                } else {
-                    throw LexerError(line, "Unexpected character $c")
+                else -> when {
+                    c.isDigit() -> yield(finishNumber())
+                    c.isJavaIdentifierStart() -> yield(finishIdentifier())
+                    c.isWhitespace() -> continue
+                    else -> throw LexerError(line, "Unexpected character $c")
                 }
             }
         }

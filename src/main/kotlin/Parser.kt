@@ -1,73 +1,173 @@
 import ast.Expr
+import ast.MatchClause
 import ast.Stmt
+import util.PrettyPrinter
+
+inline fun <T> Iterable<T>.joinForEach(insideAction: () -> Unit, action: (T) -> Unit): Unit {
+    var first = true
+    for (element in this) {
+        if (!first) {
+            insideAction()
+        }
+        action(element)
+        first = false
+    }
+}
 
 
-class ASTPrinter: Expr.Visitor<String>, Stmt.Visitor<String> {
-    override fun visit(binary: Expr.Binary): String =
-        "(${binary.operator.lexeme} ${binary.left.accept(this)} ${binary.right.accept(this)})"
+class ASTPrinter(val pp: PrettyPrinter): Expr.Visitor<Unit>, Stmt.Visitor<Unit> {
+    override fun visit(binary: Expr.Binary) {
+        binary.left.accept(this)
+        pp.append(" ${binary.operator.lexeme} ")
+        binary.right.accept(this)
+    }
 
-    override fun visit(grouping: Expr.Grouping): String =
-        "(group ${grouping.expr.accept(this)})"
+    override fun visit(grouping: Expr.Grouping) {
+        pp.append("(${grouping.expr.accept(this)})")
+    }
+    override fun visit(literal: Expr.Literal) {
+        pp.append("${literal.value ?: "nil"}")
+    }
 
-    override fun visit(literal: Expr.Literal): String =
-        "${literal.value ?: "nil"}"
+    override fun visit(literal: Expr.StringLiteral) {
+        pp.append("\"")
+        for ((prefix, expr) in literal.prefixes) {
+            pp.append(prefix)
+            pp.append("\${")
+            expr.accept(this)
+            pp.append("}")
+        }
+        pp.append(literal.rest)
+        pp.append("\"")
+    }
 
-    override fun visit(literal: Expr.StringLiteral): String =
-        TODO()
+    override fun visit(variable: Expr.Variable) {
+        pp.append(variable.name.lexeme)
+    }
 
-    override fun visit(variable: Expr.Variable): String = variable.name.lexeme
+    override fun visit(unary: Expr.Unary) {
+        pp.append(unary.operator.lexeme)
+        unary.right.accept(this)
+    }
 
-    override fun visit(unary: Expr.Unary): String =
-        "(${unary.operator.lexeme} ${unary.right.accept(this)})"
+    override fun visit(ternary: Expr.Ternary) {
+        ternary.cond.accept(this)
+        pp.append(" ? ")
+        ternary.t.accept(this)
+        pp.append(" : ")
+        ternary.e.accept(this)
+    }
 
-    override fun visit(ternary: Expr.Ternary): String =
-        "(${ternary.cond.accept(this)} ? ${ternary.t.accept(this)} : ${ternary.e.accept(this)})"
+    override fun visit(assign: Expr.Assign) {
+        pp.append("${assign.name.lexeme} = ")
+        assign.value.accept(this)
+    }
 
-    override fun visit(assign: Expr.Assign): String =
-        "${assign.name.lexeme} ${assign.value.accept(this)}"
+    override fun visit(call: Expr.Call) {
+        call.callee.accept(this)
+        pp.append("(")
 
-    override fun visit(call: Expr.Call): String =
-        "${call.callee.accept(this)}(${call.arguments.joinToString(", ") { it.accept(this) }})"
+        call.arguments.joinForEach({ pp.append(", ") }) { it.accept(this) }
+        pp.append(")")
+    }
 
 
-    override fun visit(get: Expr.Get): String =
-        "${get.obj.accept(this)}.${get.name.lexeme}"
+    override fun visit(get: Expr.Get) {
+        get.obj.accept(this)
+        pp.append(".${get.name.lexeme}")
+    }
 
-    override fun visit(set: Expr.Set): String =
-        "${set.obj.accept(this)}.${set.name.lexeme} = ${set.value.accept(this)}"
+    override fun visit(set: Expr.Set) {
+        set.obj.accept(this)
+        pp.append(".${set.name.lexeme} = ")
+        set.value.accept(this)
+    }
 
-    override fun visit(funDef: Expr.FunDef): String =
-        "fn ${funDef.name?.lexeme ?: "anonymous"}(${funDef.params.joinToString(", ") { it.lexeme }}) ${funDef.body.accept(this)}"
+    override fun visit(funDef: Expr.FunDef) {
+        pp.append("fun ${funDef.name?.lexeme ?: ""}(")
+        funDef.params.joinForEach({ pp.append(", ") }) { pp.append(it.lexeme) }
+        pp.append(") ")
+        funDef.body.accept(this)
+    }
 
-    override fun visit(t: Expr.This): String =
-        "this"
+    override fun visit(t: Expr.This) {
+        pp.append("this")
+    }
 
-    override fun visit(expression: Stmt.Expression): String =
-        "${expression.expression.accept(this)} ;"
+    override fun visit(expression: Stmt.Expression) {
+        expression.expression.accept(this)
+        pp.append(";").finishLine()
+    }
 
-    override fun visit(decl: Stmt.Decl): String =
-        "var ${decl.name.lexeme} = ${decl.init?.accept(this) ?: "no init"} ;"
+    override fun visit(decl: Stmt.Decl) {
+        pp.append("var ${decl.name.lexeme}")
+        if (decl.init != null) {
+            pp.append(" = ")
+            decl.init.accept(this)
+        }
 
-    override fun visit(funDecl: Stmt.FunDecl): String =
+        pp.append(";").finishLine()
+    }
+
+    override fun visit(funDecl: Stmt.FunDecl) {
         funDecl.body.accept(this)
+    }
 
-    override fun visit(classDecl: Stmt.ClassDecl): String =
-        "class ${classDecl.name.lexeme} { ... }"
+    override fun visit(classDecl: Stmt.ClassDecl): Unit = pp.run {
+        append("class ${classDecl.name.lexeme} {").finishLine()
+        indent {
+            classDecl.methods.forEach { it.accept(this@ASTPrinter) }
+        }
+        append("}").finishLine()
+    }
 
-    override fun visit(block: Stmt.Block): String =
-        "{ ${block.body.joinToString(" ") { it.accept(this) }} }"
+    override fun visit(block: Stmt.Block): Unit = pp.run {
+        append("{").finishLine()
+        indent {
+            block.body.forEach { it.accept(this@ASTPrinter) }
+        }
+        append("}").finishLine()
+    }
 
-    override fun visit(ifStmt: Stmt.IfStmt): String =
-        "if ( ${ifStmt.cond.accept(this)} ) ${ifStmt.t.accept(this)} else ${ifStmt.e?.accept(this) ?: "no else"}"
+    override fun visit(ifStmt: Stmt.IfStmt): Unit = pp.run {
+        append("if (")
+        ifStmt.cond.accept(this@ASTPrinter)
+        append(") ")
+        ifStmt.t.accept(this@ASTPrinter)
+        if (ifStmt.e != null) {
+            pp.append("else ")
+            ifStmt.e.accept(this@ASTPrinter)
+        }
+        finishLine()
+    }
 
-    override fun visit(whileStmt: Stmt.WhileStmt): String =
-        "while ( ${whileStmt.cond.accept(this)} ) ${whileStmt.body?.accept(this) ?: "no body"}"
+    override fun visit(whileStmt: Stmt.WhileStmt): Unit = pp.run {
+        append("while (")
+        whileStmt.cond.accept(this@ASTPrinter)
+        append(") ")
+        if (whileStmt.body != null) {
+            whileStmt.body.accept(this@ASTPrinter)
+        } else {
+            append(";").finishLine()
+        }
+    }
 
-    override fun visit(breakStmt: Stmt.Break): String =
-        "break ;"
+    override fun visit(matchStmt: Stmt.MatchStmt): Unit = pp.run {
+        append("match ...").finishLine()
+    }
 
-    override fun visit(retStmt: Stmt.Return): String =
-        "return ${retStmt.value?.accept(this) ?: "no value"}"
+    override fun visit(breakStmt: Stmt.Break) {
+        pp.append("break;").finishLine()
+    }
+
+    override fun visit(retStmt: Stmt.Return): Unit = pp.run {
+        pp.append("return")
+        if (retStmt.value != null) {
+            pp.append(" ")
+            retStmt.value.accept(this@ASTPrinter)
+        }
+        pp.append(";").finishLine()
+    }
 }
 
 class Parser(tokens: Iterator<Token>) {
@@ -206,6 +306,7 @@ class Parser(tokens: Iterator<Token>) {
         return if (match(TokenType.LBRACE)) Stmt.Block(block())
         else if (match(TokenType.IF)) ifStmt()
         else if (match(TokenType.WHILE)) whileStmt()
+        else if (match(TokenType.MATCH)) matchStmt()
         else if (match(TokenType.FOR)) forStmt()
         else if (match(TokenType.BREAK)) breakStmt()
         else if (match(TokenType.RETURN)) returnStmt()
@@ -234,12 +335,46 @@ class Parser(tokens: Iterator<Token>) {
     }
 
     private fun whileStmt(): Stmt {
-        consume(TokenType.LPAREN, "Expected ')' after 'while'")
+        consume(TokenType.LPAREN, "Expected '(' after 'while'")
         val cond = expression()
         consume(TokenType.RPAREN, "Expected ')' after 'while'")
 
         val body = if (match(TokenType.SEMI)) null else statement()
         return Stmt.WhileStmt(cond, body)
+    }
+
+    private fun matchClause(): MatchClause {
+        // Bar separated expressions
+        val exprs = mutableListOf<Expr>()
+        val isElse = match(TokenType.ELSE)
+
+        if (!isElse) {
+            do {
+                exprs.add(assignment())
+            } while (match(TokenType.COMMA))
+        }
+
+        consume(TokenType.FAT_ARROW, "Expected '=>' after match condition")
+
+        val stmt = statement()
+        return MatchClause(isElse, exprs, stmt)
+    }
+
+    private fun matchStmt(): Stmt {
+        consume(TokenType.LPAREN, "Expected '(' after 'match'")
+        val obj = expression()
+        consume(TokenType.RPAREN, "Expected ')' after 'match'")
+
+        consume(TokenType.LBRACE, "Expected '{' before match clauses")
+
+        val clauses = mutableListOf<MatchClause>()
+
+        while (!match(TokenType.RBRACE)) {
+            // find match clause
+            clauses.add(matchClause())
+        }
+
+        return Stmt.MatchStmt(obj, clauses)
     }
 
     private fun forStmt(): Stmt {
@@ -453,7 +588,7 @@ class Parser(tokens: Iterator<Token>) {
                 TokenType.STRING_INTERP -> {
                     val prev = previous()
                     val expr = expression()
-                    consume(TokenType.RBRACE, "Expected '}' after string expression'")
+                    consume(TokenType.RBRACE, "Expected '}' after string interpolation expression'")
                     pairs.add(prev.literal as String to expr)
                 }
                 else -> {

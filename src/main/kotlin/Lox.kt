@@ -1,50 +1,49 @@
+import util.PrettyPrinter
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.nio.charset.Charset
 import java.nio.file.Files
 import java.nio.file.Paths
+import kotlin.math.roundToInt
 import kotlin.system.exitProcess
 
 class Lox {
 
     private val environment = Environment()
 
+    private fun Environment.declareNativeFun(name: String, arity: Int?, callable: (List<Any?>) -> Any?) {
+        this.declare(name, object: NativeLoxFunction(name, arity) {
+            override fun call(args: List<Any?>): Any? = callable(args)
+        })
+    }
+
     init {
         environment.run {
-            declare("print", object: LoxCallable {
-                override fun call(args: List<Any?>): Any? {
-                    println(args.joinToString(" ", transform = Any?::toJLoxString))
-                    return null
-                }
-                override fun arity(): Int? = null
-                override fun toString(): String = "<native fun print:#${arity()}>"
-            })
+            declareNativeFun("print", null) { args ->
+                println(args.joinToString(" ", transform = Any?::toJLoxString))
+                null
+            }
 
-            declare("time", object: LoxCallable {
-                override fun call(args: List<Any?>): Any = System.currentTimeMillis().toDouble()
-                override fun arity(): Int = 0
-                override fun toString(): String = "<native fun time:#${arity()}>"
-            })
+            declareNativeFun("time", 0) {
+                System.currentTimeMillis().toDouble()
+            }
 
-            declare("assert", object: LoxCallable {
-                override fun call(args: List<Any?>): Any? {
-                    if (!truthy(args[0])) {
-                        throw AssertionException()
-                    }
-                    return null
-                }
+            declareNativeFun("assert", 1) {
+                if (!truthy(it[0])) throw AssertionException()
+                it[0]
+            }
 
-                override fun arity(): Int = 1
-            })
+            declareNativeFun("exit", 1) {
+                throw ExitException((it[0] as Double).roundToInt())
+            }
         }
     }
 
     private val interpreter = Interpreter(environment)
     private val resolver = Resolver(interpreter.locals::put, environment.boundNames())
-    private val astPrinter = ASTPrinter()
 
     // Runs the following prog, may be an incomplete fragment
-    private fun run(reader: BufferedReader, showPrompt: Boolean = false) {
+    private fun run(reader: BufferedReader, showPrompt: Boolean = false): Int {
 
         lateinit var parser: Parser
 
@@ -76,27 +75,42 @@ class Lox {
         val lexer = Lexer(iter)
         parser = Parser(lexer.scanTokens().iterator())
 
+//        val prettyPrinter = PrettyPrinter(2)
+//        val astPrinter = ASTPrinter(prettyPrinter)
+
         try {
             for (it in parser.parseProgram()) {
+//                it.accept(astPrinter)
                 // TODO: CHALLENGES chapter 11.
                 resolver.resolve(it)
                 interpreter.interpret(it)
             }
         } catch (e: InterpreterError) {
-            println("${e.message}\n[line ${e.token.line}]")
+            println("[line ${e.token.line}] ${e.message}")
+            return 11
+        } catch (e: ParseError) {
+            println("[line ${e.line}] ${e.message}")
+            return 10
+        } catch (e: AssertionError) {
+            println("Failed assertion!")
+            return 1
+        } catch (e: ExitException) {
+            return e.retCode
         }
+
+//        println(prettyPrinter)
+
+        return 0
     }
 
     fun runFile(fileName: String): Int {
         val bytes = Files.readAllBytes(Paths.get(fileName))
-        run(bytes.toString(Charset.defaultCharset()).reader().buffered())
-        return 0
+        return run(bytes.toString(Charset.defaultCharset()).reader().buffered())
     }
 
     fun runPrompt(): Int {
         val underlying = InputStreamReader(System.`in`).buffered()
-        run(underlying, showPrompt = true)
-        return 0
+        return run(underlying, showPrompt = true)
     }
 }
 

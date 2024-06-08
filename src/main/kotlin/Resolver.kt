@@ -1,4 +1,5 @@
 import ast.Expr
+import ast.MatchClause
 import ast.Stmt
 
 class Resolver(val resolverFunc: (Expr, Int) -> Unit, private val globals: Set<String>): Expr.Visitor<Unit>, Stmt.Visitor<Unit> {
@@ -86,6 +87,16 @@ class Resolver(val resolverFunc: (Expr, Int) -> Unit, private val globals: Set<S
     override fun visit(whileStmt: Stmt.WhileStmt) {
         whileStmt.cond.accept(this)
         whileStmt.body?.accept(this)
+    }
+
+    private fun visit(matchClause: MatchClause) {
+        matchClause.conditions.forEach { it.accept(this) }
+        matchClause.body.accept(this)
+    }
+
+    override fun visit(matchStmt: Stmt.MatchStmt) {
+        matchStmt.obj.accept(this)
+        matchStmt.clauses.forEach { visit(it) }
     }
 
     override fun visit(breakStmt: Stmt.Break) {}

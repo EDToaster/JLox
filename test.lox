@@ -1,18 +1,20 @@
+fun timeIt(func) {
+    var start = time();
+    func();
+    var end = time();
+    print("${end - start} milliseconds elapsed");
+}
+
 fun fib(n) {
   if (n <= 1) return n;
   return fib(n - 2) + fib(n - 1);
 }
 
-var start = time();
-for (var i = 0; i < 10; i = i + 1) {
-  fib(i);
-}
-var end = time();
+timeIt(fun() fib(10););
 
 print("This is a string!");
-print("This is a ${"nested ${"interpolation"}"} string!");
+print("This is a ${"doubly "}${"nested ${"interpolation"}"} string!");
 
-print("" + (end - start) + " milliseconds elapsed");
 
 fun makeCounter() {
     var count = 0;
@@ -45,7 +47,7 @@ assert(named_func == func_alias);
 
 // Test self-referential recursion
 fun count_down(i) {
-    if (i < 0) {return;}
+    if (i < 0) return;
 
     print(i);
     count_down(i - 1);
@@ -55,11 +57,19 @@ count_down(10);
 
 // Test classes
 class TestClass {
-    greet(name) return "Hello, " + name + "!";
+    greet(name) return "Hello, ${name}!";
 }
 
 print(TestClass);
-print(TestClass());
+print(TestClass().greet("me"));
+
+for (var i = 0; i < 5; i = i + 1) {
+    match (i) {
+        0, 2-1 => print("low");
+        2, 3 => print("high");
+        else => print("very high!");
+    }
+}
 
 var outerObj = TestClass();
 var innerObj = TestClass();
@@ -85,6 +95,8 @@ var bill = Person("Bill");
 
 bill.sayName = jane.sayName;
 bill.sayName(); // should say "Jane"
+
+//exit(111);
 
 /*
 THIS IS A

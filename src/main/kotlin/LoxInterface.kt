@@ -6,6 +6,11 @@ interface LoxCallable {
     fun bind(obj: LoxObject): LoxCallable = this
 }
 
+abstract class NativeLoxFunction(val name: String, val arity: Int?): LoxCallable {
+    override fun arity(): Int? = arity
+    override fun toString(): String = "<native fun $name:#${arity() ?: "vararg"}>"
+}
+
 // TODO: STATIC AND PROPERTY METHODS chapter 12.
 class LoxClass(val name: String, val methods: Map<String, LoxFunction>): LoxCallable {
     override fun call(args: List<Any?>): Any {
